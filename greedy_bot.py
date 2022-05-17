@@ -115,8 +115,9 @@ class GreedyBot(BotAI):
                     target = targets.closest_to(vr)
                     vr.attack(target)
                 
-
+"""
 run_game(maps.get("BlackburnAIE"), [
     Bot(Race.Protoss, GreedyBot()),
-    Computer(Race.Protoss, Difficulty.Easy)
+    Bot(Race.Protoss, GreedyBot())
     ], realtime=False)
+"""
