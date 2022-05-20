@@ -1,4 +1,5 @@
 from unittest import case
+from numpy import record
 from sc2 import maps
 from sc2.player import Bot, Computer
 from sc2.main import run_game
@@ -13,6 +14,8 @@ class StalkerCheeseBot(BotAI):
     def __init__(self):
         self.nexus = None
         self.chronoboost_count = 0
+        self.scout_probe = None
+        self.stalker_count = 0
 
 
     async def on_step(self, iteration: int):
@@ -22,12 +25,27 @@ class StalkerCheeseBot(BotAI):
         if(self.nexus == None):
             self.nexus = self.townhalls.random 
         """
-        self.nexus = self.townhalls.ready.random
+        if(self.townhalls.ready.amount > 0):
+            self.nexus = self.townhalls.ready.random
+        else:
+            return
 
-        if(self.supply_used < 20 and self.nexus.is_idle):
+        if(self.supply_used < 23 and self.nexus.is_idle):
             if self.can_afford(UnitTypeId.PROBE) and self.already_pending(UnitTypeId.PROBE) == 0:
                 self.nexus.train(UnitTypeId.PROBE)
-
+        if(self.workers.amount == 17 and self.scout_probe == None and self.can_afford(UnitTypeId.PYLON)):
+            self.scout_probe = self.workers.closest_to(self.enemy_start_locations[0])
+            closest = None
+            min_dist = 10000
+            for loc in self.expansion_locations_list:
+                dist = self.enemy_start_locations[0].distance_to(loc)
+                if(dist < min_dist):
+                    min_dist = dist
+                    closest = loc
+            placement = await self.find_placement(UnitTypeId.PYLON, near=closest, placement_step=1)
+            print("Sneaking a probe")
+            self.scout_probe.build(UnitTypeId.PYLON, placement, queue=True)
+            
         if(self.already_pending(UnitTypeId.GATEWAY) and self.chronoboost_count == 0):
             if not self.nexus.has_buff(BuffId.CHRONOBOOSTENERGYCOST):
                 if self.nexus.energy >= 50:
@@ -77,10 +95,36 @@ class StalkerCheeseBot(BotAI):
                 placement_position = await self.find_placement(UnitTypeId.GATEWAY, near=pos, placement_step=1)
                 builder_prob = self.workers.closest_to(placement_position)
                 builder_prob.build(UnitTypeId.GATEWAY, placement_position)
+        elif(self.supply_used == 21):
+            if(not self.already_pending(UnitTypeId.CYBERNETICSCORE)):
+                placement_position = await self.find_placement(UnitTypeId.CYBERNETICSCORE, near=self.structures(UnitTypeId.GATEWAY).random.position, placement_step=1)
+                builder_prob = self.workers.closest_to(placement_position)
+                builder_prob.build(UnitTypeId.CYBERNETICSCORE, placement_position)
+        elif(self.supply_used == 22):
+            if(not self.already_pending(UnitTypeId.PYLON)):
+                placement_position = await self.find_placement(UnitTypeId.PYLON, near=self.structures(UnitTypeId.ASSIMILATOR).random.position, placement_step=1)
+                builder_prob = self.workers.closest_to(placement_position)
+                builder_prob.build(UnitTypeId.PYLON, placement_position)
+        elif(self.supply_used == 23 and self.structures(UnitTypeId.GATEWAY).ready.amount == 2 and self.stalker_count == 0):
+            gateways = self.structures(UnitTypeId.GATEWAY).ready
+            for gw in gateways:
+                gw.train(UnitTypeId.STALKER)
+                self.stalker_count += 1
 
-
+        if(self.stalker_count == 2):
+            gateway_count = self.already_pending(UnitTypeId.GATEWAY) + self.structures(UnitTypeId.GATEWAY).ready.amount
+            if(gateway_count < 4):
+                placement_position = await self.find_placement(UnitTypeId.GATEWAY, near=self.structures(UnitTypeId.ASSIMILATOR).random.position, placement_step=1)
+                builder_prob = self.workers.closest_to(placement_position)
+                builder_prob.build(UnitTypeId.GATEWAY, placement_position)
+            for vr in self.units(UnitTypeId.STALKER).ready.idle:
+                targets = self.enemy_units.closer_than(30, self.nexus)
+                if targets:
+                    target = targets.closest_to(vr)
+                    vr.attack(target)
 
 run_game(maps.get("BlackburnAIE"), [
     Bot(Race.Protoss, StalkerCheeseBot(), name="Cheeser"),
     Computer(Race.Protoss, Difficulty.Easy)
-    ], realtime=False)
+    ], realtime=False,
+    save_replay_as="Example.SC2Replay")
