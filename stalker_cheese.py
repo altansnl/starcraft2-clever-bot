@@ -16,7 +16,17 @@ class StalkerCheeseBot(BotAI):
         self.chronoboost_count = 0
         self.scout_probe = None
         self.stalker_count = 0
+        self.warpgate_researched = False
+        self.sneaky_pylon_placement = None
+        self.sneaky_pylon_placed = False
 
+    async def warp_new_units(self, proxy):
+        for warpgate in self.structures(UnitTypeId.WARPGATE).ready:
+            pos = proxy.position.to2.random_on_distance(4)
+            placement = await self.find_placement(AbilityId.WARPGATETRAIN_STALKER, pos, placement_step=1)
+            if placement is None:
+                return
+            self.do(warpgate.warp_in(UnitTypeId.STALKER, placement))
 
     async def on_step(self, iteration: int):
         await self.distribute_workers()
@@ -33,18 +43,23 @@ class StalkerCheeseBot(BotAI):
         if(self.supply_used < 23 and self.nexus.is_idle):
             if self.can_afford(UnitTypeId.PROBE) and self.already_pending(UnitTypeId.PROBE) == 0:
                 self.nexus.train(UnitTypeId.PROBE)
-        if(self.workers.amount == 17 and self.scout_probe == None and self.can_afford(UnitTypeId.PYLON)):
+        if(self.workers.amount >= 17 and self.scout_probe == None and self.can_afford(UnitTypeId.PYLON) and self.warpgate_researched and not self.scout_probe):
+            # I didn't know how to make the probe go there and stay until we have the warpgate researched :/
             self.scout_probe = self.workers.closest_to(self.enemy_start_locations[0])
+            self.workers.remove(self.scout_probe)
             closest = None
             min_dist = 10000
             for loc in self.expansion_locations_list:
                 dist = self.enemy_start_locations[0].distance_to(loc)
-                if(dist < min_dist):
+                if(dist < min_dist and dist > 30):
                     min_dist = dist
                     closest = loc
-            placement = await self.find_placement(UnitTypeId.PYLON, near=closest, placement_step=1)
+
             print("Sneaking a probe")
-            self.scout_probe.build(UnitTypeId.PYLON, placement, queue=True)
+
+            self.sneaky_pylon_placement = await self.find_placement(UnitTypeId.PYLON, near=closest, placement_step=1)
+            self.scout_probe.build(UnitTypeId.PYLON, self.sneaky_pylon_placement, queue=True)
+            self.sneaky_pylon_placed = True
             
         if(self.already_pending(UnitTypeId.GATEWAY) and self.chronoboost_count == 0):
             if not self.nexus.has_buff(BuffId.CHRONOBOOSTENERGYCOST):
@@ -105,16 +120,27 @@ class StalkerCheeseBot(BotAI):
                 placement_position = await self.find_placement(UnitTypeId.PYLON, near=self.structures(UnitTypeId.ASSIMILATOR).random.position, placement_step=1)
                 builder_prob = self.workers.closest_to(placement_position)
                 builder_prob.build(UnitTypeId.PYLON, placement_position)
-        elif(self.supply_used == 23 and self.structures(UnitTypeId.GATEWAY).ready.amount == 2 and self.stalker_count == 0):
+        elif(self.supply_used == 23 and self.structures(UnitTypeId.GATEWAY).ready.amount == 2 and self.stalker_count == 0 and self.structures(UnitTypeId.CYBERNETICSCORE).ready.amount == 1):
             gateways = self.structures(UnitTypeId.GATEWAY).ready
             for gw in gateways:
                 gw.train(UnitTypeId.STALKER)
                 self.stalker_count += 1
+                
+        elif(self.supply_used == self.supply_cap):
+            if self.can_afford(UnitTypeId.PYLON):
+                await self.build(UnitTypeId.PYLON, near=self.townhalls.ready.random )
+        
+        if self.structures(UnitTypeId.CYBERNETICSCORE).ready.amount > 0 and self.can_afford(AbilityId.RESEARCH_WARPGATE) and not self.warpgate_researched:
+            ccore = self.structures(UnitTypeId.CYBERNETICSCORE).ready.first
+            self.do(ccore(AbilityId.RESEARCH_WARPGATE))
+            self.warpgate_researched = True
 
         if(self.stalker_count == 2):
             gateway_count = self.already_pending(UnitTypeId.GATEWAY) + self.structures(UnitTypeId.GATEWAY).ready.amount
             if(gateway_count < 4):
                 placement_position = await self.find_placement(UnitTypeId.GATEWAY, near=self.structures(UnitTypeId.ASSIMILATOR).random.position, placement_step=1)
+                if not placement_position:
+                    return
                 builder_prob = self.workers.closest_to(placement_position)
                 builder_prob.build(UnitTypeId.GATEWAY, placement_position)
             for vr in self.units(UnitTypeId.STALKER).ready.idle:
@@ -122,9 +148,25 @@ class StalkerCheeseBot(BotAI):
                 if targets:
                     target = targets.closest_to(vr)
                     vr.attack(target)
+              
+        if(self.structures(UnitTypeId.WARPGATE).ready.amount >= 4):
+
+            proxy = self.structures(UnitTypeId.PYLON).closest_to(self.sneaky_pylon_placement)
+            await self.warp_new_units(proxy)
+            
+        # attack!    
+        if self.units(UnitTypeId.STALKER).amount >= 6:
+            for vr in self.units(UnitTypeId.STALKER).ready.idle:
+                targets = (self.enemy_units | self.enemy_structures).filter(lambda unit: unit.can_be_attacked)
+                if targets:
+                    target = targets.closest_to(vr)
+                    vr.attack(target)
+                else:
+                    vr.attack(self.enemy_start_locations[0])
+
 
 run_game(maps.get("BlackburnAIE"), [
     Bot(Race.Protoss, StalkerCheeseBot(), name="Cheeser"),
-    Computer(Race.Protoss, Difficulty.Easy)
+    Computer(Race.Protoss, Difficulty.Hard)
     ], realtime=False,
     save_replay_as="Example.SC2Replay")
