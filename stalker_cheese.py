@@ -22,6 +22,8 @@ class StalkerCheeseBot(BotAI):
         self.sneaky_pylon_placed = False
         self.researched_blink = False
 
+        self.BLINK_HP_PERCENTAGE = 0.5
+
     async def getTwilightCouncil(self):
         placement = await self.find_placement(UnitTypeId.TWILIGHTCOUNCIL, near=self.nexus.position, placement_step=1)
         if placement is None:
@@ -169,7 +171,7 @@ class StalkerCheeseBot(BotAI):
                 targets = self.enemy_units.closer_than(30, self.nexus)
                 if targets:
                     target = targets.closest_to(st)
-                    if(st.health_percentage < 0.8):
+                    if(st.health_percentage < self.BLINK_HP_PERCENTAGE):
                         print("tying to blink, hp left: ", st.health_percentage)
                         blink_pos = st.position + (target.position - st.position).normalized * 8
                         st(AbilityId.EFFECT_BLINK_STALKER, blink_pos)
@@ -190,16 +192,13 @@ class StalkerCheeseBot(BotAI):
                 targets = (self.enemy_units | self.enemy_structures).filter(lambda unit: unit.can_be_attacked)
                 if targets:
                     target = targets.closest_to(st)
-                    if(st.health_percentage < 0.8):
+                    if(st.health_percentage < self.BLINK_HP_PERCENTAGE):
                         print("tying to blink, hp left: ", st.health_percentage)
                         blink_pos = st.position + (target.position - st.position).normalized * 8
                         st(AbilityId.EFFECT_BLINK_STALKER, blink_pos)
                     st.attack(target)
                 else:
-                    if(st.health_percentage < 0.8):
-                        print("tying to blink, hp left: ", st.health_percentage)
-                        blink_pos = st.position.random_on_distance(8)
-                        st(AbilityId.EFFECT_BLINK_STALKER, blink_pos)
+                    # do not see targets, better not blink
                     st.attack(self.enemy_start_locations[0])
 
 
