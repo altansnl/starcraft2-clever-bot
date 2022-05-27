@@ -12,6 +12,7 @@ from greedy_bot import *
 
 class StalkerCheeseBot(BotAI):
     def __init__(self):
+        # self.unit_command_uses_self_do = True # actually disables everything!?
         self.nexus = None
         self.chronoboost_count = 0
         self.scout_probe = None
@@ -19,6 +20,26 @@ class StalkerCheeseBot(BotAI):
         self.warpgate_researched = False
         self.sneaky_pylon_placement = None
         self.sneaky_pylon_placed = False
+        self.researched_blink = False
+
+    async def getTwilightCouncil(self):
+        placement = await self.find_placement(UnitTypeId.TWILIGHTCOUNCIL, near=self.nexus.position, placement_step=1)
+        if placement is None:
+            return
+        await self.build(UnitTypeId.TWILIGHTCOUNCIL, placement)
+        return
+
+    async def researchBlink(self):
+        if(self.researched_blink == False and self.can_afford(AbilityId.RESEARCH_BLINK)):
+            if(self.researched_blink == False):
+                try: 
+                    tw_council = self.structures(UnitTypeId.TWILIGHTCOUNCIL).ready.first
+                except:
+                    return
+                print("Blink research started")
+                self.do(tw_council(AbilityId.RESEARCH_BLINK))
+                print("Blink research ended")
+                self.researched_blink = True
 
     async def warp_new_units(self, proxy):
         for warpgate in self.structures(UnitTypeId.WARPGATE).ready:
@@ -29,6 +50,7 @@ class StalkerCheeseBot(BotAI):
             self.do(warpgate.warp_in(UnitTypeId.STALKER, placement))
 
     async def on_step(self, iteration: int):
+        # print("Stalker amount:", self.units(UnitTypeId.STALKER).ready.amount)
         await self.distribute_workers()
         
         """
@@ -111,7 +133,7 @@ class StalkerCheeseBot(BotAI):
                 builder_prob = self.workers.closest_to(placement_position)
                 builder_prob.build(UnitTypeId.GATEWAY, placement_position)
         elif(self.supply_used == 21):
-            if(not self.already_pending(UnitTypeId.CYBERNETICSCORE)):
+            if(not self.already_pending(UnitTypeId.CYBERNETICSCORE) and self.structures(UnitTypeId.GATEWAY).amount > 0):
                 placement_position = await self.find_placement(UnitTypeId.CYBERNETICSCORE, near=self.structures(UnitTypeId.GATEWAY).random.position, placement_step=1)
                 builder_prob = self.workers.closest_to(placement_position)
                 builder_prob.build(UnitTypeId.CYBERNETICSCORE, placement_position)
@@ -143,30 +165,46 @@ class StalkerCheeseBot(BotAI):
                     return
                 builder_prob = self.workers.closest_to(placement_position)
                 builder_prob.build(UnitTypeId.GATEWAY, placement_position)
-            for vr in self.units(UnitTypeId.STALKER).ready.idle:
+            for st in self.units(UnitTypeId.STALKER):
                 targets = self.enemy_units.closer_than(30, self.nexus)
                 if targets:
-                    target = targets.closest_to(vr)
-                    vr.attack(target)
+                    target = targets.closest_to(st)
+                    if(st.health_percentage < 0.8):
+                        print("tying to blink, hp left: ", st.health_percentage)
+                        blink_pos = st.position + (target.position - st.position).normalized * 8
+                        st(AbilityId.EFFECT_BLINK_STALKER, blink_pos)
+                    st.attack(target)
               
         if(self.structures(UnitTypeId.WARPGATE).ready.amount >= 4):
-
             proxy = self.structures(UnitTypeId.PYLON).closest_to(self.sneaky_pylon_placement)
             await self.warp_new_units(proxy)
+
+            if(self.structures(UnitTypeId.TWILIGHTCOUNCIL).amount == 0 and self.researched_blink == False and self.can_afford(UnitTypeId.TWILIGHTCOUNCIL)):
+                if(self.already_pending(UnitTypeId.TWILIGHTCOUNCIL) == False):
+                    await self.getTwilightCouncil()
+            await self.researchBlink()
             
         # attack!    
         if self.units(UnitTypeId.STALKER).amount >= 6:
-            for vr in self.units(UnitTypeId.STALKER).ready.idle:
+            for st in self.units(UnitTypeId.STALKER):
                 targets = (self.enemy_units | self.enemy_structures).filter(lambda unit: unit.can_be_attacked)
                 if targets:
-                    target = targets.closest_to(vr)
-                    vr.attack(target)
+                    target = targets.closest_to(st)
+                    if(st.health_percentage < 0.8):
+                        print("tying to blink, hp left: ", st.health_percentage)
+                        blink_pos = st.position + (target.position - st.position).normalized * 8
+                        st(AbilityId.EFFECT_BLINK_STALKER, blink_pos)
+                    st.attack(target)
                 else:
-                    vr.attack(self.enemy_start_locations[0])
+                    if(st.health_percentage < 0.8):
+                        print("tying to blink, hp left: ", st.health_percentage)
+                        blink_pos = st.position.random_on_distance(8)
+                        st(AbilityId.EFFECT_BLINK_STALKER, blink_pos)
+                    st.attack(self.enemy_start_locations[0])
 
 
-run_game(maps.get("BlackburnAIE"), [
+run_game(maps.get("BerlingradAIE"), [
     Bot(Race.Protoss, StalkerCheeseBot(), name="Cheeser"),
-    Computer(Race.Protoss, Difficulty.Hard)
+    Computer(Race.Protoss, Difficulty.Harder)
     ], realtime=False,
     save_replay_as="Example.SC2Replay")
