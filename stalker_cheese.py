@@ -1,4 +1,3 @@
-from itertools import count
 from sc2 import maps
 from sc2.player import Bot, Computer
 from sc2.main import run_game
@@ -263,7 +262,7 @@ class StalkerCheeseBot(BotAI):
                 else:
                     # do not see targets, better not blink
                     st.attack(self.enemy_start_locations[0])
-                    
+
 run_game(maps.get("BerlingradAIE"), [
     Bot(Race.Protoss, StalkerCheeseBot(), name="Cheeser"),
     Computer(Race.Protoss, Difficulty.Harder)
