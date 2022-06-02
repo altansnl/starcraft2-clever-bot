@@ -1,5 +1,3 @@
-from unittest import case
-from numpy import record
 from sc2 import maps
 from sc2.player import Bot, Computer
 from sc2.main import run_game
@@ -8,7 +6,6 @@ from sc2.bot_ai import BotAI
 from sc2.ids.unit_typeid import UnitTypeId
 from sc2.ids.ability_id import AbilityId
 from sc2.ids.buff_id import BuffId
-from greedy_bot import *
 
 class StalkerCheeseBot(BotAI):
     def __init__(self):
@@ -29,6 +26,7 @@ class StalkerCheeseBot(BotAI):
         if placement is None:
             return
         await self.build(UnitTypeId.TWILIGHTCOUNCIL, placement)
+        await self._client.move_camera(placement)
         return
 
     async def researchBlink(self):
@@ -42,6 +40,7 @@ class StalkerCheeseBot(BotAI):
                 self.do(tw_council(AbilityId.RESEARCH_BLINK))
                 print("Blink research ended")
                 self.researched_blink = True
+                
 
     async def warp_new_units(self, proxy):
         for warpgate in self.structures(UnitTypeId.WARPGATE).ready:
@@ -83,12 +82,14 @@ class StalkerCheeseBot(BotAI):
 
             self.sneaky_pylon_placement = await self.find_placement(UnitTypeId.PYLON, near=closest, placement_step=1)
             self.scout_probe.build(UnitTypeId.PYLON, self.sneaky_pylon_placement, queue=True)
+            await self._client.move_camera(self.sneaky_pylon_placement)
             self.sneaky_pylon_placed = True
             
         if(self.already_pending(UnitTypeId.GATEWAY) and self.chronoboost_count == 0):
             if not self.nexus.has_buff(BuffId.CHRONOBOOSTENERGYCOST):
                 if self.nexus.energy >= 50:
                     self.nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, self.nexus)
+                    await self._client.move_camera(self.nexus)
                     print("Nexus is chrono boosted now!, -50 energy")
                     self.chronoboost_count += 1
 
@@ -97,12 +98,14 @@ class StalkerCheeseBot(BotAI):
             builder_prob = self.workers.closest_to(placement)
             if(self.already_pending(UnitTypeId.PYLON) == 0 and self.can_afford(UnitTypeId.PYLON)):
                 builder_prob.build(UnitTypeId.PYLON, placement)
+                await self._client.move_camera(placement)
             return
         elif(self.supply_used == 16):
             placement = self.structures(UnitTypeId.PYLON).random.position.towards(self.game_info.map_center, 4)
             builder_prob = self.workers.closest_to(placement)
             if(self.already_pending(UnitTypeId.GATEWAY) == 0 and self.can_afford(UnitTypeId.GATEWAY)):
                 builder_prob.build(UnitTypeId.GATEWAY, placement)
+                await self._client.move_camera(placement)
         elif(self.supply_used == 17):
             vgs = self.vespene_geyser.closer_than(15, self.nexus)
             for vg in vgs:
@@ -134,16 +137,19 @@ class StalkerCheeseBot(BotAI):
                 placement_position = await self.find_placement(UnitTypeId.GATEWAY, near=pos, placement_step=1)
                 builder_prob = self.workers.closest_to(placement_position)
                 builder_prob.build(UnitTypeId.GATEWAY, placement_position)
+                await self._client.move_camera(placement_position)
         elif(self.supply_used == 21):
             if(not self.already_pending(UnitTypeId.CYBERNETICSCORE) and self.structures(UnitTypeId.GATEWAY).amount > 0):
                 placement_position = await self.find_placement(UnitTypeId.CYBERNETICSCORE, near=self.structures(UnitTypeId.GATEWAY).random.position, placement_step=1)
                 builder_prob = self.workers.closest_to(placement_position)
                 builder_prob.build(UnitTypeId.CYBERNETICSCORE, placement_position)
+                await self._client.move_camera(placement_position)
         elif(self.supply_used == 22):
             if(not self.already_pending(UnitTypeId.PYLON)):
                 placement_position = await self.find_placement(UnitTypeId.PYLON, near=self.structures(UnitTypeId.ASSIMILATOR).random.position, placement_step=1)
                 builder_prob = self.workers.closest_to(placement_position)
                 builder_prob.build(UnitTypeId.PYLON, placement_position)
+                await self._client.move_camera(placement_position)
         elif(self.supply_used == 23 and self.structures(UnitTypeId.GATEWAY).ready.amount == 2 and self.stalker_count == 0 and self.structures(UnitTypeId.CYBERNETICSCORE).ready.amount == 1):
             gateways = self.structures(UnitTypeId.GATEWAY).ready
             for gw in gateways:
@@ -152,27 +158,38 @@ class StalkerCheeseBot(BotAI):
                 
         elif(self.supply_used == self.supply_cap):
             if self.can_afford(UnitTypeId.PYLON):
-                await self.build(UnitTypeId.PYLON, near=self.townhalls.ready.random )
-        
+                # get pylon closest to enemy base, but not the sneaky pylon
+                if(self.units(UnitTypeId.PYLON).amount > 0):
+                    pos = self.units(UnitTypeId.PYLON).closer_than(50,self.townhalls.ready.first).closest_to(self.enemy_start_locations[0]).towards(self.enemy_start_locations[0])
+                    placement_position = await self.find_placement(UnitTypeId.GATEWAY, near=pos, placement_step=1)
+                else:
+                    placement_position = self.nexus
+                await self.build(UnitTypeId.PYLON, near=placement_position)
+                await self._client.move_camera(placement_position)
+                print('out of resources! new PYLON')
+
         if self.structures(UnitTypeId.CYBERNETICSCORE).ready.amount > 0 and self.can_afford(AbilityId.RESEARCH_WARPGATE) and not self.warpgate_researched:
             ccore = self.structures(UnitTypeId.CYBERNETICSCORE).ready.first
             self.do(ccore(AbilityId.RESEARCH_WARPGATE))
             self.warpgate_researched = True
 
         if(self.stalker_count == 2):
-            gateway_count = self.already_pending(UnitTypeId.GATEWAY) + self.structures(UnitTypeId.GATEWAY).ready.amount
+            gateway_count = self.already_pending(UnitTypeId.GATEWAY) + self.structures(UnitTypeId.GATEWAY).ready.amount 
+            gateway_count += self.already_pending(UnitTypeId.WARPGATE) + self.structures(UnitTypeId.WARPGATE).ready.amount
             if(gateway_count < 4):
                 placement_position = await self.find_placement(UnitTypeId.GATEWAY, near=self.structures(UnitTypeId.ASSIMILATOR).random.position, placement_step=1)
                 if not placement_position:
                     return
                 builder_prob = self.workers.closest_to(placement_position)
                 builder_prob.build(UnitTypeId.GATEWAY, placement_position)
+                await self._client.move_camera(placement_position)
             for st in self.units(UnitTypeId.STALKER):
                 targets = self.enemy_units.closer_than(30, self.nexus)
                 if targets:
                     target = targets.closest_to(st)
                     if(st.health_percentage < self.BLINK_HP_PERCENTAGE):
                         print("tying to blink, hp left: ", st.health_percentage)
+                        await self._client.move_camera(st.position)
                         blink_pos = st.position + (target.position - st.position).normalized * 8
                         st(AbilityId.EFFECT_BLINK_STALKER, blink_pos)
                     st.attack(target)
@@ -194,6 +211,7 @@ class StalkerCheeseBot(BotAI):
                     target = targets.closest_to(st)
                     if(st.health_percentage < self.BLINK_HP_PERCENTAGE):
                         print("tying to blink, hp left: ", st.health_percentage)
+                        await self._client.move_camera(st.position)
                         blink_pos = st.position + (target.position - st.position).normalized * 8
                         st(AbilityId.EFFECT_BLINK_STALKER, blink_pos)
                     st.attack(target)
@@ -204,6 +222,6 @@ class StalkerCheeseBot(BotAI):
 
 run_game(maps.get("BerlingradAIE"), [
     Bot(Race.Protoss, StalkerCheeseBot(), name="Cheeser"),
-    Computer(Race.Protoss, Difficulty.Harder)
+    Computer(Race.Protoss, Difficulty.Medium)
     ], realtime=False,
     save_replay_as="Example.SC2Replay")
