@@ -1,3 +1,4 @@
+from itertools import count
 from sc2 import maps
 from sc2.player import Bot, Computer
 from sc2.main import run_game
@@ -18,6 +19,7 @@ class StalkerCheeseBot(BotAI):
         self.sneaky_pylon_placement = None
         self.sneaky_pylon_placed = False
         self.researched_blink = False
+        self.rush_stalkers = False
 
         self.max_enemy_count = 4
         self.BLINK_HP_PERCENTAGE = 0.5
@@ -216,6 +218,8 @@ class StalkerCheeseBot(BotAI):
                 await self._client.move_camera(placement_position)
             for st in self.units(UnitTypeId.STALKER):
                 targets = self.enemy_units.closer_than(30, self.nexus)
+                if(targets.count == 1):
+                    break
                 if targets:
                     target = targets.closest_to(st)
                     if(st.health_percentage < self.BLINK_HP_PERCENTAGE):
@@ -225,16 +229,15 @@ class StalkerCheeseBot(BotAI):
                         st(AbilityId.EFFECT_BLINK_STALKER, blink_pos)
                     st.attack(target)
 
-        if(self.units(UnitTypeId.STALKER).amount > self.structures(UnitTypeId.NEXUS).amount * 6):
+        if(self.units(UnitTypeId.STALKER).amount > self.structures(UnitTypeId.NEXUS).amount * 13):
             await self.expand_now_custom()
-        elif(self.vespene > 400 and self.minerals > 1000):
+        elif(self.vespene > 1000 and self.minerals > 2000):
             await self.expand_now_custom()
         else:
             # WARP NEW UNITS
             if(self.structures(UnitTypeId.WARPGATE).ready.amount >= 4 and self.can_afford(UnitTypeId.NEXUS)):
                 proxy = self.structures(UnitTypeId.PYLON).closest_to(self.sneaky_pylon_placement)
                 await self.warp_new_units(proxy)
-
                 if(self.structures(UnitTypeId.TWILIGHTCOUNCIL).amount == 0 and self.researched_blink == False and self.can_afford(UnitTypeId.TWILIGHTCOUNCIL)):
                     if(self.already_pending(UnitTypeId.TWILIGHTCOUNCIL) == False):
                         await self.getTwilightCouncil()
@@ -245,7 +248,8 @@ class StalkerCheeseBot(BotAI):
             self.max_enemy_count = enemy_army_count
 
         # attack!    
-        if self.units(UnitTypeId.STALKER).amount >= self.max_enemy_count + 2:
+        if self.units(UnitTypeId.STALKER).amount >= self.max_enemy_count + 2 or self.rush_stalkers:
+            self.rush_stalkers = True
             for st in self.units(UnitTypeId.STALKER):
                 targets = (self.enemy_units | self.enemy_structures).filter(lambda unit: unit.can_be_attacked)
                 if targets:
@@ -259,10 +263,9 @@ class StalkerCheeseBot(BotAI):
                 else:
                     # do not see targets, better not blink
                     st.attack(self.enemy_start_locations[0])
-
-
+                    
 run_game(maps.get("BerlingradAIE"), [
     Bot(Race.Protoss, StalkerCheeseBot(), name="Cheeser"),
-    Computer(Race.Protoss, Difficulty.Hard)
+    Computer(Race.Protoss, Difficulty.Harder)
     ], realtime=False,
     save_replay_as="Example.SC2Replay")
